@@ -10,6 +10,7 @@ import {
   AlertCircle 
 } from 'lucide-react';
 import { store } from '../lib/store';
+import { api } from '../lib/api';
 
 export const RegisterPage: React.FC = () => {
   const [fullName, setFullName] = useState('');
@@ -21,13 +22,15 @@ export const RegisterPage: React.FC = () => {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serverError, setServerError] = useState('');
 
   const navigate = useNavigate();
   const location = useLocation();
   const returnUrl = (location.state as any)?.returnUrl || '/dashboard';
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setServerError('');
     const errs: Record<string, string> = {};
 
     if (!fullName.trim()) errs.fullName = 'Please enter your full name.';
@@ -44,16 +47,27 @@ export const RegisterPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      store.registerUser({
+    try {
+      const { user, error } = await api.signUp({
         email: email.trim().toLowerCase(),
-        full_name: fullName.trim(),
+        password: password.trim(),
+        fullName: fullName.trim(),
         phone: cleanPhone,
-        company_name: companyName.trim()
+        role: 'customer'
       });
+
+      if (error) {
+        setServerError(error);
+        setIsSubmitting(false);
+        return;
+      }
+
+      setIsSubmitting(false);
       navigate(returnUrl);
-    }, 400);
+    } catch (err: any) {
+      setServerError(err.message || 'An unexpected error occurred.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -68,6 +82,13 @@ export const RegisterPage: React.FC = () => {
           <h1 className="text-2xl font-black text-slate-900">Create Customer Account</h1>
           <p className="text-xs text-slate-500">Book services, track milestones, approve quotes, and chat with engineers.</p>
         </div>
+
+        {serverError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{serverError}</span>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleRegister} className="space-y-3">

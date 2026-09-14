@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Project, UserProfile, Quotation } from '../../types';
 import { store } from '../../lib/store';
+import { api } from '../../lib/api';
 
 export const DashboardPage: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(store.getCurrentUser());
@@ -30,6 +31,14 @@ export const DashboardPage: React.FC = () => {
     }
     setCurrentUser(user);
     setProjects(store.getUserProjects(user));
+
+    const syncLive = async () => {
+      if (api.isLive()) {
+        const liveProjects = await api.getProjects(user.id);
+        if (liveProjects) setProjects(liveProjects);
+      }
+    };
+    syncLive();
 
     const unsubscribe = store.subscribe(() => {
       const u = store.getCurrentUser();

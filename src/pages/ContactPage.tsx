@@ -10,6 +10,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { store } from '../lib/store';
+import { api } from '../lib/api';
 
 export const ContactPage: React.FC = () => {
   const settings = store.getSettings();
@@ -38,13 +39,13 @@ export const ContactPage: React.FC = () => {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      store.submitContactEnquiry({
+    try {
+      await api.submitContactEnquiry({
         name: name.trim(),
         email: email.trim().toLowerCase(),
         phone: phone.replace(/\D/g, ''),
@@ -60,7 +61,10 @@ export const ContactPage: React.FC = () => {
       setSubject('');
       setMessage('');
       setErrors({});
-    }, 400);
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setErrors({ form: err.message || 'Failed to submit enquiry.' });
+    }
   };
 
   return (

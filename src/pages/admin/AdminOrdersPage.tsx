@@ -15,6 +15,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { store } from '../../lib/store';
+import { api } from '../../lib/api';
 import { Project, ProjectStatus, Service, Employee } from '../../types';
 
 const ALL_STATUSES: ProjectStatus[] = [
@@ -59,11 +60,25 @@ export const AdminOrdersPage: React.FC = () => {
 
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const unsubscribe = store.subscribe(() => {
+  const refreshData = async () => {
+    if (api.isLive()) {
+      const liveP = await api.getProjects();
+      if (liveP) setProjects(liveP);
+      const liveE = await api.getEmployees();
+      if (liveE) setEmployees(liveE);
+      const liveS = await api.getServices();
+      if (liveS) setServices(liveS);
+    } else {
       setProjects(store.getProjects());
       setServices(store.getServices());
       setEmployees(store.getEmployees());
+    }
+  };
+
+  useEffect(() => {
+    refreshData();
+    const unsubscribe = store.subscribe(() => {
+      refreshData();
     });
     return () => unsubscribe();
   }, []);
@@ -78,28 +93,29 @@ export const AdminOrdersPage: React.FC = () => {
     return matchSearch && matchStatus && matchService;
   });
 
-  const handleSaveStatus = (e: React.FormEvent) => {
+  const handleSaveStatus = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!statusModalProject) return;
 
-    store.updateProjectStatus(statusModalProject.id, newStatus, statusNotes, 'NSK Admin');
+    await api.updateProjectStatus(statusModalProject.id, newStatus, statusNotes, 'NSK Admin');
     
     if (assignedEmployeeId) {
-      store.assignProjectToEmployee(statusModalProject.id, assignedEmployeeId);
+      await api.assignProjectToEmployee(statusModalProject.id, assignedEmployeeId);
     }
     
     setStatusModalProject(null);
     setStatusNotes('');
+    refreshData();
   };
 
-  const handleCreateQuote = (e: React.FormEvent) => {
+  const handleCreateQuote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quoteModalProject) return;
 
     const validDate = new Date();
     validDate.setDate(validDate.getDate() + quoteValidDays);
 
-    store.createQuotation(quoteModalProject.id, {
+    await api.createQuotation(quoteModalProject.id, {
       line_items: quoteItems,
       discount: quoteDiscount,
       taxRate: quoteTaxRate,
@@ -108,6 +124,7 @@ export const AdminOrdersPage: React.FC = () => {
     });
 
     setQuoteModalProject(null);
+    refreshData();
   };
 
   return (

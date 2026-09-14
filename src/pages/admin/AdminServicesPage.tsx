@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Clock, Check, Edit2, Image, Save, X, ExternalLink } from 'lucide-react';
+import { Sparkles, Clock, Check, Edit2, Image, Save, X, ExternalLink, UploadCloud } from 'lucide-react';
 import { store } from '../../lib/store';
+import { api } from '../../lib/api';
 import { Service } from '../../types';
 
 export const AdminServicesPage: React.FC = () => {
@@ -10,10 +11,21 @@ export const AdminServicesPage: React.FC = () => {
   const [timelineDraft, setTimelineDraft] = useState('');
   const [priceDraft, setPriceDraft] = useState<string>('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const refreshServices = async () => {
+    if (api.isLive()) {
+      const data = await api.getServices();
+      if (data) setServices(data);
+    } else {
+      setServices(store.getServices());
+    }
+  };
 
   useEffect(() => {
+    refreshServices();
     const unsubscribe = store.subscribe(() => {
-      setServices(store.getServices());
+      refreshServices();
     });
     return () => unsubscribe();
   }, []);
@@ -25,30 +37,37 @@ export const AdminServicesPage: React.FC = () => {
     setPriceDraft(s.starting_price ? String(s.starting_price) : '');
   };
 
-  const handleSaveService = (e: React.FormEvent) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editingService || !e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+    setIsUploading(true);
+    try {
+      const publicUrl = await api.uploadServiceImage(file, editingService.slug);
+      if (publicUrl) {
+        setImageUrlDraft(publicUrl);
+        setFeedback('Image uploaded to Supabase Storage.');
+        setTimeout(() => setFeedback(null), 3000);
+      }
+    } catch (err) {
+      console.error('Image upload failed:', err);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSaveService = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingService) return;
 
-    store.updateServiceImage(editingService.id, imageUrlDraft.trim());
-    
-    // Also update timeline and price if changed
-    const currentServices = store.getServices();
-    const updated = currentServices.map(s => {
-      if (s.id === editingService.id) {
-        return {
-          ...s,
-          image_url: imageUrlDraft.trim(),
-          estimated_timeline: timelineDraft.trim(),
-          starting_price: priceDraft ? Number(priceDraft) : undefined
-        };
-      }
-      return s;
+    await api.updateServiceShowcase(editingService.id, {
+      image_url: imageUrlDraft.trim(),
+      timeline: timelineDraft.trim(),
+      price: priceDraft ? Number(priceDraft) : undefined
     });
-    localStorage.setItem('nsk_db_services', JSON.stringify(updated));
-    (store as any).notify();
 
     setFeedback(`Updated ${editingService.title} showcase settings.`);
     setEditingService(null);
+    refreshServices();
     setTimeout(() => setFeedback(null), 3000);
   };
 
@@ -136,17 +155,24 @@ export const AdminServicesPage: React.FC = () => {
 
             <form onSubmit={handleSaveService} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 uppercase mb-1">Showcase Image URL</label>
-                <input
-                  type="url"
-                  value={imageUrlDraft}
-                  onChange={e => setImageUrlDraft(e.target.value)}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
+                <label className="block font-bold text-slate-700 uppercase mb-1">Showcase Image URL / Upload</label>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="url"
+                    value={imageUrlDraft}
+                    onChange={e => setImageUrlDraft(e.target.value)}
+                    placeholder="https://images.unsplash.com/... or upload"
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                  <label className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0">
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>{isUploading ? 'Uploading...' : 'Upload'}</span>
+                    <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" disabled={isUploading} />
+                  </label>
+                </div>
                 {imageUrlDraft && (
-                  <div className="mt-2 h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                  <div className="h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
                     <img src={imageUrlDraft} alt="Preview" className="w-full h-full object-cover" />
                   </div>
                 )}

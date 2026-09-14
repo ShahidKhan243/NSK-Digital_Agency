@@ -7,6 +7,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { store } from '../lib/store';
+import { api } from '../lib/api';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -18,7 +19,7 @@ export const LoginPage: React.FC = () => {
   const location = useLocation();
   const returnUrl = (location.state as any)?.returnUrl || '/dashboard';
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password.trim()) {
       setError('Please provide both email and password.');
@@ -26,14 +27,24 @@ export const LoginPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    setError('');
+
+    try {
       const trimmedEmail = email.trim().toLowerCase();
-      
-      // Standard client login
-      const user = store.loginUser(trimmedEmail, 'customer');
+      const { user, error: loginError } = await api.signIn(trimmedEmail, password.trim());
+
+      if (loginError || !user) {
+        setError(loginError || 'Invalid email or password.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      setIsSubmitting(false);
       navigate(returnUrl);
-    }, 400);
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please check credentials.');
+      setIsSubmitting(false);
+    }
   };
 
   return (

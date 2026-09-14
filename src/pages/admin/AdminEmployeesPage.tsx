@@ -17,6 +17,7 @@ import {
   Plus
 } from 'lucide-react';
 import { store } from '../../lib/store';
+import { api } from '../../lib/api';
 import { Employee, Project } from '../../types';
 
 export const AdminEmployeesPage: React.FC = () => {
@@ -41,9 +42,16 @@ export const AdminEmployeesPage: React.FC = () => {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshData = () => {
-    setEmployees(store.getEmployees());
-    setProjects(store.getProjects());
+  const refreshData = async () => {
+    if (api.isLive()) {
+      const liveEmployees = await api.getEmployees();
+      if (liveEmployees) setEmployees(liveEmployees);
+      const liveProjects = await api.getProjects();
+      if (liveProjects) setProjects(liveProjects);
+    } else {
+      setEmployees(store.getEmployees());
+      setProjects(store.getProjects());
+    }
   };
 
   useEffect(() => {
@@ -52,7 +60,7 @@ export const AdminEmployeesPage: React.FC = () => {
     return () => unsub();
   }, []);
 
-  const handleCreateEmployee = (e: React.FormEvent) => {
+  const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -62,7 +70,7 @@ export const AdminEmployeesPage: React.FC = () => {
     }
 
     try {
-      store.createEmployee({
+      await api.createEmployee({
         full_name: name.trim(),
         email: email.trim().toLowerCase(),
         password: password.trim(),
@@ -79,6 +87,7 @@ export const AdminEmployeesPage: React.FC = () => {
       setPassword('');
       setDesignation('');
       setPhone('');
+      refreshData();
       setTimeout(() => setFeedback(null), 3000);
     } catch (err: any) {
       setError(err.message || 'Failed to create employee');

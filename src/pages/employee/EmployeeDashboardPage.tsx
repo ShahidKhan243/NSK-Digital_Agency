@@ -16,6 +16,7 @@ import {
   Check
 } from 'lucide-react';
 import { store } from '../../lib/store';
+import { api } from '../../lib/api';
 import { Project, ProjectStatus, Message, ProjectFile } from '../../types';
 
 export const EmployeeDashboardPage: React.FC = () => {
@@ -31,13 +32,23 @@ export const EmployeeDashboardPage: React.FC = () => {
   const [chatMessage, setChatMessage] = useState<string>('');
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  const refreshData = () => {
-    const all = store.getProjects();
-    if (currentUser?.role === 'admin') {
-      setProjects(all);
-    } else if (currentUser) {
-      const assigned = all.filter(p => p.assigned_employee_id === currentUser.id || p.assigned_to?.includes(currentUser.full_name));
-      setProjects(assigned);
+  const refreshData = async () => {
+    if (api.isLive()) {
+      const live = await api.getProjects();
+      if (currentUser?.role === 'admin') {
+        setProjects(live);
+      } else if (currentUser) {
+        const assigned = live.filter(p => p.assigned_employee_id === currentUser.id || p.assigned_to?.includes(currentUser.full_name));
+        setProjects(assigned);
+      }
+    } else {
+      const all = store.getProjects();
+      if (currentUser?.role === 'admin') {
+        setProjects(all);
+      } else if (currentUser) {
+        const assigned = all.filter(p => p.assigned_employee_id === currentUser.id || p.assigned_to?.includes(currentUser.full_name));
+        setProjects(assigned);
+      }
     }
   };
 
@@ -57,9 +68,9 @@ export const EmployeeDashboardPage: React.FC = () => {
     }
   }, [activeProject?.id]);
 
-  const handleUpdateStatus = () => {
+  const handleUpdateStatus = async () => {
     if (!activeProject || !currentUser) return;
-    store.updateProjectStatus(activeProject.id, statusDraft, devNotesDraft, currentUser.full_name);
+    await api.updateProjectStatus(activeProject.id, statusDraft, devNotesDraft, currentUser.full_name);
     if (devNotesDraft !== activeProject.internal_notes) {
       store.updateProjectDetails(activeProject.id, { internal_notes: devNotesDraft });
     }
@@ -67,7 +78,7 @@ export const EmployeeDashboardPage: React.FC = () => {
     setTimeout(() => setActionSuccess(null), 3000);
   };
 
-  const handleAddDeliverable = (e: React.FormEvent) => {
+  const handleAddDeliverable = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !deliverableUrl.trim() || !currentUser) return;
 
@@ -87,11 +98,11 @@ export const EmployeeDashboardPage: React.FC = () => {
     setTimeout(() => setActionSuccess(null), 3000);
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeProject || !chatMessage.trim() || !currentUser) return;
 
-    store.sendMessage(
+    await api.sendMessage(
       activeProject.id,
       chatMessage.trim(),
       currentUser.role === 'admin' ? 'admin' : 'employee',

@@ -22,6 +22,7 @@ import {
   PhoneCall
 } from 'lucide-react';
 import { store } from '../lib/store';
+import { api } from '../lib/api';
 import { Service } from '../types';
 import { AuthRequiredModal } from '../components/portal/AuthRequiredModal';
 
@@ -68,10 +69,20 @@ const PROCESS_STEPS = [
 ];
 
 export const HomePage: React.FC = () => {
-  const [services] = useState<Service[]>(store.getServices().slice(0, 6));
+  const [services, setServices] = useState<Service[]>(store.getServices().slice(0, 6));
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [selectedServiceSlug, setSelectedServiceSlug] = useState<string>('');
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    const fetchServices = async () => {
+      const data = await api.getServices();
+      if (data && data.length > 0) {
+        setServices(data.slice(0, 6));
+      }
+    };
+    fetchServices();
+  }, []);
 
   const handleBookService = (serviceSlug: string) => {
     const user = store.getCurrentUser();

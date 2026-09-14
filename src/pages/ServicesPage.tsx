@@ -14,6 +14,7 @@ import {
   MessageCircle 
 } from 'lucide-react';
 import { store } from '../lib/store';
+import { api } from '../lib/api';
 import { Service } from '../types';
 import { AuthRequiredModal } from '../components/portal/AuthRequiredModal';
 
@@ -30,11 +31,21 @@ const renderIcon = (iconName: string) => {
 };
 
 export const ServicesPage: React.FC = () => {
-  const [services] = useState<Service[]>(store.getServices());
+  const [services, setServices] = useState<Service[]>(store.getServices());
   const [searchTerm, setSearchTerm] = useState('');
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [selectedServiceSlug, setSelectedServiceSlug] = useState<string>('');
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    const fetchServices = async () => {
+      const data = await api.getServices();
+      if (data && data.length > 0) {
+        setServices(data);
+      }
+    };
+    fetchServices();
+  }, []);
 
   const filteredServices = services.filter(s => 
     s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||

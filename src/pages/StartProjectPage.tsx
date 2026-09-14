@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { store } from '../lib/store';
-import { Project } from '../types';
+import { api } from '../lib/api';
+import { Project, Service } from '../types';
 import { AuthRequiredModal } from '../components/portal/AuthRequiredModal';
 
 const FEATURE_OPTIONS = [
@@ -53,7 +54,7 @@ export const StartProjectPage: React.FC = () => {
   const navigate = useNavigate();
   const serviceParam = searchParams.get('service');
 
-  const services = store.getServices();
+  const [services, setServices] = useState<Service[]>(store.getServices());
   const [currentUser, setCurrentUser] = useState(store.getCurrentUser());
   const [showAuthModal, setShowAuthModal] = useState(false);
   
@@ -62,7 +63,7 @@ export const StartProjectPage: React.FC = () => {
   const [clientEmail, setClientEmail] = useState(currentUser?.email || '');
   const [clientPhone, setClientPhone] = useState(currentUser?.phone || '');
   const [companyName, setCompanyName] = useState(currentUser?.company_name || '');
-  const [selectedServiceSlug, setSelectedServiceSlug] = useState(serviceParam || services[0]?.slug || 'website-development');
+  const [selectedServiceSlug, setSelectedServiceSlug] = useState(serviceParam || 'website-development');
   const [projectTitle, setProjectTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([
@@ -73,7 +74,7 @@ export const StartProjectPage: React.FC = () => {
   const [budgetRange, setBudgetRange] = useState(BUDGET_RANGES[1]);
   const [preferredDeadline, setPreferredDeadline] = useState(DEADLINES[1]);
   const [referenceWebsite, setReferenceWebsite] = useState('');
-  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: string }[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: string; rawFile?: File }[]>([]);
 
   // Validation & Submission State
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -82,6 +83,17 @@ export const StartProjectPage: React.FC = () => {
   const [copiedId, setCopiedId] = useState(false);
 
   useEffect(() => {
+    const fetchServices = async () => {
+      const data = await api.getServices();
+      if (data && data.length > 0) {
+        setServices(data);
+        if (!serviceParam) {
+          setSelectedServiceSlug(data[0].slug);
+        }
+      }
+    };
+    fetchServices();
+
     const user = store.getCurrentUser();
     setCurrentUser(user);
     if (user) {
@@ -108,7 +120,8 @@ export const StartProjectPage: React.FC = () => {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files).map(f => ({
         name: f.name,
-        size: `${(f.size / (1024 * 1024)).toFixed(2)} MB`
+        size: `${(f.size / (1024 * 1024)).toFixed(2)} MB`,
+        rawFile: f
       }));
       setUploadedFiles(prev => [...prev, ...newFiles]);
     }
@@ -147,7 +160,7 @@ export const StartProjectPage: React.FC = () => {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) {
       setShowAuthModal(true);
@@ -157,14 +170,16 @@ export const StartProjectPage: React.FC = () => {
 
     setIsSubmitting(true);
 
-    const activeService = services.find(s => s.slug === selectedServiceSlug) || services[0];
+    const activeService = services.find(s => s.slug === selectedServiceSlug) || services[0] || {
+      slug: 'custom-solution',
+      title: 'Custom Digital Solution'
+    };
 
-    setTimeout(() => {
-      const newProject = store.createProjectRequest({
+    try {
+      const { request: newProject, requestCode, error } = await api.createServiceRequest({
         client_name: clientName.trim(),
         client_email: clientEmail.trim().toLowerCase(),
         client_phone: clientPhone.replace(/\D/g, ''),
-        company_name: companyName.trim(),
         service_slug: activeService.slug,
         service_title: activeService.title,
         project_title: projectTitle.trim() || `${activeService.title} for ${companyName || clientName}`,
@@ -176,31 +191,44 @@ export const StartProjectPage: React.FC = () => {
         customer_id: currentUser.id
       });
 
-      uploadedFiles.forEach(f => {
-        store.addProjectFile(newProject.id, {
-          file_name: f.name,
-          file_url: 'https://storage.nsk.agency/' + f.name,
-          file_size: 1500000,
-          file_type: 'application/octet-stream',
-          category: 'client_upload',
-          uploader_name: clientName,
-          uploader_id: currentUser.id
-        });
-      });
+      if (newProject) {
+        // Upload any attached files to project
+        for (const fileObj of uploadedFiles) {
+          if (fileObj.rawFile) {
+            await api.uploadProjectFile(newProject.id, fileObj.rawFile, 'client_upload', currentUser.id, clientName);
+          } else {
+            store.addProjectFile(newProject.id, {
+              file_name: fileObj.name,
+              file_url: 'https://storage.nsk.agency/' + fileObj.name,
+              file_size: 1500000,
+              file_type: 'application/octet-stream',
+              category: 'client_upload',
+              uploader_name: clientName,
+              uploader_id: currentUser.id
+            });
+          }
+        }
 
-      setIsSubmitting(false);
-      setSubmittedProject(newProject);
+        setIsSubmitting(false);
+        setSubmittedProject(newProject);
 
-      try {
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 }
-        });
-      } catch (e) {
-        // ignore
+        try {
+          confetti({
+            particleCount: 80,
+            spread: 70,
+            origin: { y: 0.6 }
+          });
+        } catch (e) {
+          // ignore
+        }
+      } else {
+        setErrors({ form: error || 'Failed to submit project request.' });
+        setIsSubmitting(false);
       }
-    }, 600);
+    } catch (err: any) {
+      setErrors({ form: err.message || 'Submission error.' });
+      setIsSubmitting(false);
+    }
   };
 
   const copyProjectId = () => {

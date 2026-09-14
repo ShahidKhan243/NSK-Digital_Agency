@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShieldCheck, Lock, Mail, AlertCircle, ArrowRight, Briefcase } from 'lucide-react';
 import { store } from '../../lib/store';
+import { api } from '../../lib/api';
 
 export const EmployeeLoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -10,7 +11,7 @@ export const EmployeeLoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -21,17 +22,28 @@ export const EmployeeLoginPage: React.FC = () => {
 
     setLoading(true);
 
-    setTimeout(() => {
-      // First check if an employee credentials match
-      const emp = store.loginEmployee(email.trim().toLowerCase(), password);
+    try {
+      // First check local/store employee match
+      const cleanEmail = email.trim().toLowerCase();
+      const emp = store.loginEmployee(cleanEmail, password);
       if (emp) {
         setLoading(false);
         navigate('/employee');
         return;
       }
 
+      // Check live supabase auth
+      if (api.isLive()) {
+        const { user, error: authErr } = await api.signIn(cleanEmail, password);
+        if (user && (user.role === 'employee' || user.role === 'admin')) {
+          setLoading(false);
+          navigate('/employee');
+          return;
+        }
+      }
+
       // Check if admin is logging in via employee portal
-      const adminUser = store.login(email.trim().toLowerCase(), password);
+      const adminUser = store.login(cleanEmail, password);
       if (adminUser && adminUser.role === 'admin') {
         setLoading(false);
         navigate('/employee');
@@ -40,7 +52,10 @@ export const EmployeeLoginPage: React.FC = () => {
 
       setLoading(false);
       setError('Invalid employee credentials. Please contact the administrator.');
-    }, 400);
+    } catch (err: any) {
+      setLoading(false);
+      setError(err.message || 'Authentication error.');
+    }
   };
 
   return (

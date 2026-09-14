@@ -28,6 +28,7 @@ import {
   UserProfile 
 } from '../../types';
 import { store } from '../../lib/store';
+import { api } from '../../lib/api';
 
 const ALL_STATUSES: ProjectStatus[] = [
   'Request Received',
@@ -58,6 +59,8 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ projectId,
 
   // Chat input
   const [chatText, setChatText] = useState('');
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   // Quote response state
@@ -68,6 +71,32 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ projectId,
   const [activeTab, setActiveTab] = useState<'overview' | 'quotation' | 'messages' | 'files' | 'history'>('overview');
 
   useEffect(() => {
+    // Initial fetch from live if connected
+    const syncProjectDetails = async () => {
+      if (api.isLive()) {
+        const liveMessages = await api.getMessages(projectId);
+        if (liveMessages) setMessages(liveMessages);
+
+        const liveFiles = await api.getProjectFiles(projectId);
+        if (liveFiles) setFiles(liveFiles);
+
+        const liveHistory = await api.getStatusHistory(projectId);
+        if (liveHistory) setHistory(liveHistory);
+
+        const liveQuote = await api.getQuotationForProject(projectId);
+        if (liveQuote) setQuotation(liveQuote);
+      }
+    };
+    syncProjectDetails();
+
+    // Subscribe to realtime messages
+    const unsubRealtime = api.subscribeToMessages(projectId, (newMsg) => {
+      setMessages(prev => {
+        if (prev.some(m => m.id === newMsg.id)) return prev;
+        return [...prev, newMsg];
+      });
+    });
+
     const unsubscribe = store.subscribe(() => {
       setProject(store.getProjectById(projectId));
       setQuotation(store.getQuotationForProject(projectId));
@@ -75,7 +104,11 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ projectId,
       setMessages(store.getMessages(projectId));
       setFiles(store.getProjectFiles(projectId));
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubRealtime();
+      unsubscribe();
+    };
   }, [projectId]);
 
   useEffect(() => {
@@ -98,43 +131,62 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({ projectId,
 
   const currentStatusIndex = ALL_STATUSES.indexOf(project.status as ProjectStatus);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatText.trim()) return;
+    if (!chatText.trim() || isSendingMessage) return;
 
-    store.sendMessage(
-      project.id,
-      chatText.trim(),
-      currentUser.role === 'admin' ? 'admin' : 'customer',
-      currentUser.full_name,
-      currentUser.id
-    );
+    const senderRole = currentUser.role === 'admin' ? 'admin' : (currentUser.role === 'employee' ? 'employee' : 'customer');
+    const textToSend = chatText.trim();
     setChatText('');
-  };
+    setIsSendingMessage(true);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      store.addProjectFile(project.id, {
-        file_name: file.name,
-        file_url: 'https://example.com/uploads/' + file.name,
-        file_size: file.size,
-        file_type: file.type || 'application/octet-stream',
-        category: currentUser.role === 'admin' ? 'deliverable' : 'client_upload',
-        uploader_name: currentUser.full_name,
-        uploader_id: currentUser.id
-      });
+    try {
+      await api.sendMessage(
+        project.id,
+        textToSend,
+        senderRole,
+        currentUser.full_name,
+        currentUser.id
+      );
+    } catch (err) {
+      console.error('Send message error:', err);
+    } finally {
+      setIsSendingMessage(false);
     }
   };
 
-  const handleQuoteAction = (action: 'accept' | 'reject') => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setIsUploadingFile(true);
+      const category = currentUser.role === 'admin' ? 'deliverable' : (currentUser.role === 'employee' ? 'deliverable' : 'client_upload');
+      try {
+        await api.uploadProjectFile(
+          project.id,
+          file,
+          category,
+          currentUser.id,
+          currentUser.full_name
+        );
+      } catch (err) {
+        console.error('File upload error:', err);
+      } finally {
+        setIsUploadingFile(false);
+      }
+    }
+  };
+
+  const handleQuoteAction = async (action: 'accept' | 'reject') => {
     if (!quotation) return;
     setIsRespondingQuote(true);
-    setTimeout(() => {
-      store.respondToQuotation(quotation.id, action, quoteNotes);
+    try {
+      await api.respondToQuotation(quotation.id, action, quoteNotes);
       setIsRespondingQuote(false);
       setQuoteNotes('');
-    }, 400);
+    } catch (err) {
+      console.error('Quote action error:', err);
+      setIsRespondingQuote(false);
+    }
   };
 
   return (
